@@ -1,34 +1,29 @@
-import httpx
-import time
 from fastapi import HTTPException, Request
-from typing import Dict, Any, Tuple
+from jose import jwt, exceptions as jwt_exceptions
+import os, json
+from _types import User
+from ollama._types import ChatResponse
+from typing import Iterator, Any, AsyncGenerator
 
-TOKEN_CACHE:Dict[str, Tuple[Dict[str, Any], float]] = {}
+async def verify_jwt_token(request: Request) -> User:
+    """
+    Verify the JWT token from the request headers.
+    """
+    token = request.headers.get("Authorization")
+    if not token or not token.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
-def is_token_cached_valid(token: str) -> bool:
-    return token in TOKEN_CACHE and TOKEN_CACHE[token][1] > time.time()
+    token = token.split(" ")[1]
 
-async def get_cached_or_fetch_user(token: str) -> Dict[str, Any] | Any:
-    if is_token_cached_valid(token):
-        return TOKEN_CACHE[token][0]
+    try:
+        payload = jwt.decode(token, os.environ['SECRET_KEY'], algorithms=["HS256"])
+        return User(email=payload.get("email", ""), name=payload.get("name", ""), provider=payload.get("provider", ""))
+    
+    except jwt_exceptions.JWTError:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://api.github.com/user",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid GitHub token")
-
-    user_data = resp.json()
-    # Cache it for 5 minutes
-    TOKEN_CACHE[token] = (user_data, time.time() + 300)
-    return user_data
-
-async def verify_github_token(request: Request):
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid token")
-
-    token = auth_header.split(" ")[1]
-    return await get_cached_or_fetch_user(token)
+async def event_stream(chat_response: Iterator[ChatResponse]) -> AsyncGenerator[str, Any]:
+    for chunk in chat_response:
+        content = chunk.get("message", {}).get("content", "")
+        if content:
+            yield json.dumps({"message": {"content": content}}) + "\n"

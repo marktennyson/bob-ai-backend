@@ -1,18 +1,20 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import List
 from ollama._types import * # type: ignore
 
-class ChatRequest(BaseModel):
-    model: Optional[str]
-    messages: List[Message]
+class SaveUserResponse(BaseModel):
+    message: str
 
-class ChatResponse(BaseModel):
-    response: str
-
-class Model(BaseModel):
+class AIModel(BaseModel):
+    id: str
     name: str
     digest: str
 
-class ModelListResponse(BaseModel):
-    models: List[str]
+class AIModelListResponse(BaseModel):
+    models: List[AIModel]
+
+class User(BaseModel):
+    email: str
+    name: str
+    provider: str
     
